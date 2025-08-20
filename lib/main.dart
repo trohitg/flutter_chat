@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 // Configuration class for easy backend URL management
 class AppConfig {
@@ -13,7 +14,7 @@ class AppConfig {
       // For Android emulator, use 10.0.2.2 to reach host machine
       // For physical device, replace with your machine's IP address
       // Example: 'http://192.168.1.100:8000'
-      return 'http://10.0.2.2:8000';
+      return 'http://192.168.29.64:8000';
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       // For iOS simulator, localhost should work
       // For physical device, replace with your machine's IP address
@@ -22,6 +23,59 @@ class AppConfig {
     } else {
       // For desktop platforms
       return 'http://localhost:8000';
+    }
+  }
+}
+
+class BubbleService {
+  static const MethodChannel _channel =
+      MethodChannel('com.example.flutter_chat/bubble');
+
+  static Future<bool> showBubble() async {
+    try {
+      final bool result = await _channel.invokeMethod('showBubble');
+      return result;
+    } on PlatformException catch (e) {
+      if (kDebugMode) {
+        print("Failed to show bubble: '${e.message}'.");
+      }
+      return false;
+    }
+  }
+
+  static Future<bool> hideBubble() async {
+    try {
+      final bool result = await _channel.invokeMethod('hideBubble');
+      return result;
+    } on PlatformException catch (e) {
+      if (kDebugMode) {
+        print("Failed to hide bubble: '${e.message}'.");
+      }
+      return false;
+    }
+  }
+
+  static Future<bool> canDrawOverlays() async {
+    try {
+      final bool result = await _channel.invokeMethod('canDrawOverlays');
+      return result;
+    } on PlatformException catch (e) {
+      if (kDebugMode) {
+        print("Failed to check overlay permission: '${e.message}'.");
+      }
+      return false;
+    }
+  }
+
+  static Future<bool> requestOverlayPermission() async {
+    try {
+      final bool result = await _channel.invokeMethod('requestOverlayPermission');
+      return result;
+    } on PlatformException catch (e) {
+      if (kDebugMode) {
+        print("Failed to request overlay permission: '${e.message}'.");
+      }
+      return false;
     }
   }
 }
@@ -78,7 +132,8 @@ class MyApp extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFF268bd2), width: 2),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
         textTheme: const TextTheme(
           bodyLarge: TextStyle(color: Color(0xFF839496)),
@@ -111,24 +166,27 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final List<ChatMessage> _messages = [];
   final List<Map<String, String>> _conversationHistory = [];
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _currentTypingText = '';
+  bool _bubbleVisible = false;
 
   @override
   void initState() {
     super.initState();
-    
-    const welcomeMessage = "Hello! I'm your AI assistant powered by Cerebras. How can I help you today?";
+    WidgetsBinding.instance.addObserver(this);
+
+    const welcomeMessage =
+        "Hello! I'm your AI assistant powered by Cerebras. How can I help you today?";
     _messages.add(ChatMessage(
       text: welcomeMessage,
       isUser: false,
       timestamp: DateTime.now(),
     ));
-    
+
     // Add welcome message to conversation history as system context
     _conversationHistory.add({
       'role': 'assistant',
@@ -138,9 +196,30 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    if (defaultTargetPlatform == TargetPlatform.android && _bubbleVisible) {
+      switch (state) {
+        case AppLifecycleState.resumed:
+          // App is in foreground - bubble should be hidden automatically by native code
+          break;
+        case AppLifecycleState.paused:
+        case AppLifecycleState.inactive:
+          // App is going to background - bubble should be shown automatically by native code
+          break;
+        case AppLifecycleState.detached:
+        case AppLifecycleState.hidden:
+          break;
+      }
+    }
   }
 
   void _handleSubmitted(String text) {
@@ -148,13 +227,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final userMessage = text.trim();
     _textController.clear();
-    
+
     // Add user message to conversation history
     _conversationHistory.add({
       'role': 'user',
       'content': userMessage,
     });
-    
+
     setState(() {
       _messages.add(ChatMessage(
         text: userMessage,
@@ -183,13 +262,13 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       // Make HTTP request to backend with full conversation history
       final response = await _sendMessageToBackend();
-      
+
       // Add AI response to conversation history
       _conversationHistory.add({
         'role': 'assistant',
         'content': response,
       });
-      
+
       setState(() {
         _messages.removeLast();
         _messages.add(ChatMessage(
@@ -206,7 +285,8 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _messages.removeLast();
         _messages.add(ChatMessage(
-          text: 'Sorry, I\'m having trouble connecting to the server. Please try again.',
+          text:
+              'Sorry, I\'m having trouble connecting to the server. Please try again.',
           isUser: false,
           timestamp: DateTime.now(),
           isTyping: false,
@@ -217,7 +297,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<String> _sendMessageToBackend() async {
     final String baseUrl = AppConfig.getBackendUrl();
-    
+
     try {
       final requestBody = {
         'messages': _conversationHistory,
@@ -225,34 +305,43 @@ class _ChatScreenState extends State<ChatScreen> {
         'temperature': 0.7,
       };
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/chat'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode(requestBody),
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/chat'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: json.encode(requestBody),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
         return responseData['response'] ?? 'Sorry, I didn\'t understand that.';
       } else {
-        final errorText = response.body.isNotEmpty ? response.body : 'Unknown error';
-        throw Exception('Server returned status code: ${response.statusCode}. Error: $errorText');
+        final errorText =
+            response.body.isNotEmpty ? response.body : 'Unknown error';
+        throw Exception(
+            'Server returned status code: ${response.statusCode}. Error: $errorText');
       }
     } catch (e) {
       // Enhanced error handling with debugging information
       if (kDebugMode) {
         print('Error connecting to backend at $baseUrl: $e');
       }
-      
-      if (e.toString().contains('XMLHttpRequest') || e.toString().contains('CORS')) {
-        throw Exception('CORS error: Please enable CORS on your backend server.');
-      } else if (e.toString().contains('Connection refused') || e.toString().contains('Network is unreachable')) {
-        throw Exception('Cannot connect to server at $baseUrl. Make sure the backend is running.');
+
+      if (e.toString().contains('XMLHttpRequest') ||
+          e.toString().contains('CORS')) {
+        throw Exception(
+            'CORS error: Please enable CORS on your backend server.');
+      } else if (e.toString().contains('Connection refused') ||
+          e.toString().contains('Network is unreachable')) {
+        throw Exception(
+            'Cannot connect to server at $baseUrl. Make sure the backend is running.');
       } else if (e.toString().contains('SocketException')) {
-        throw Exception('Network error: Check your internet connection and backend URL.');
+        throw Exception(
+            'Network error: Check your internet connection and backend URL.');
       }
       throw Exception('Failed to connect to server: $e');
     }
@@ -261,7 +350,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _typeMessage(String message) async {
     for (int i = 0; i <= message.length; i++) {
       if (!mounted) return;
-      
+
       setState(() {
         _currentTypingText = message.substring(0, i);
         _messages.last = ChatMessage(
@@ -275,7 +364,73 @@ class _ChatScreenState extends State<ChatScreen> {
       _scrollToBottom();
       await Future.delayed(const Duration(milliseconds: 30));
     }
+  }
 
+  Future<void> _toggleBubble() async {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bubble feature is only available on Android')),
+      );
+      return;
+    }
+
+    if (_bubbleVisible) {
+      final success = await BubbleService.hideBubble();
+      if (success) {
+        setState(() {
+          _bubbleVisible = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Chat bubble hidden')),
+          );
+        }
+      }
+    } else {
+      final canDraw = await BubbleService.canDrawOverlays();
+      if (!canDraw) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: const Text('Permission Required'),
+                content: const Text(
+                  'To show the chat bubble, this app needs permission to display over other apps. '
+                  'You will be redirected to the settings to grant this permission.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      await BubbleService.requestOverlayPermission();
+                    },
+                    child: const Text('Grant Permission'),
+                  ),
+                ],
+              );
+            },
+          );
+        }
+        return;
+      }
+
+      final success = await BubbleService.showBubble();
+      if (success) {
+        setState(() {
+          _bubbleVisible = true;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Chat bubble is now visible')),
+          );
+        }
+      }
+    }
   }
 
   void _scrollToBottom() {
@@ -295,6 +450,13 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Flutter Chat'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bubble_chart),
+            onPressed: _toggleBubble,
+            tooltip: 'Toggle Chat Bubble',
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -371,8 +533,8 @@ class _ChatBubble extends StatelessWidget {
         children: [
           Expanded(
             child: Column(
-              crossAxisAlignment: message.isUser 
-                  ? CrossAxisAlignment.end 
+              crossAxisAlignment: message.isUser
+                  ? CrossAxisAlignment.end
                   : CrossAxisAlignment.start,
               children: [
                 Container(
@@ -387,15 +549,18 @@ class _ChatBubble extends StatelessWidget {
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
                       topRight: const Radius.circular(16),
-                      bottomLeft: message.isUser 
-                          ? const Radius.circular(16) 
+                      bottomLeft: message.isUser
+                          ? const Radius.circular(16)
                           : const Radius.circular(4),
-                      bottomRight: message.isUser 
-                          ? const Radius.circular(4) 
+                      bottomRight: message.isUser
+                          ? const Radius.circular(4)
                           : const Radius.circular(16),
                     ),
                     border: Border.all(
-                      color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outline
+                          .withOpacity(0.2),
                       width: 1,
                     ),
                   ),
@@ -405,7 +570,7 @@ class _ChatBubble extends StatelessWidget {
                       Text(
                         message.text,
                         style: TextStyle(
-                          color: message.isUser 
+                          color: message.isUser
                               ? Theme.of(context).colorScheme.onPrimary
                               : Theme.of(context).colorScheme.onSurface,
                           fontSize: 16,
@@ -431,7 +596,7 @@ class _ChatBubble extends StatelessWidget {
 
 class _TypingIndicator extends StatefulWidget {
   const _TypingIndicator({super.key});
-  
+
   @override
   _TypingIndicatorState createState() => _TypingIndicatorState();
 }
@@ -473,10 +638,9 @@ class _TypingIndicatorState extends State<_TypingIndicator>
               height: 6,
               margin: const EdgeInsets.symmetric(horizontal: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFF586e75).withOpacity(
-                  0.3 + (_animation.value * 0.7) * 
-                  (1 - (index * 0.2).clamp(0.0, 1.0))
-                ),
+                color: const Color(0xFF586e75).withOpacity(0.3 +
+                    (_animation.value * 0.7) *
+                        (1 - (index * 0.2).clamp(0.0, 1.0))),
                 shape: BoxShape.circle,
               ),
             );
