@@ -1,6 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+
+// Configuration class for easy backend URL management
+class AppConfig {
+  static String getBackendUrl() {
+    if (kIsWeb) {
+      // For Flutter web
+      return 'http://localhost:8000';
+    } else if (defaultTargetPlatform == TargetPlatform.android) {
+      // For Android emulator, use 10.0.2.2 to reach host machine
+      // For physical device, replace with your machine's IP address
+      // Example: 'http://192.168.1.100:8000'
+      return 'http://10.0.2.2:8000';
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      // For iOS simulator, localhost should work
+      // For physical device, replace with your machine's IP address
+      // Example: 'http://192.168.1.100:8000'
+      return 'http://localhost:8000';
+    } else {
+      // For desktop platforms
+      return 'http://localhost:8000';
+    }
+  }
+}
 
 void main() {
   runApp(const MyApp());
@@ -87,21 +111,16 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
+class _ChatScreenState extends State<ChatScreen> {
   final List<ChatMessage> _messages = [];
   final List<Map<String, String>> _conversationHistory = [];
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  late AnimationController _typingAnimationController;
   String _currentTypingText = '';
 
   @override
   void initState() {
     super.initState();
-    _typingAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 50),
-      vsync: this,
-    );
     
     const welcomeMessage = "Hello! I'm your AI assistant powered by Cerebras. How can I help you today?";
     _messages.add(ChatMessage(
@@ -121,7 +140,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   void dispose() {
     _textController.dispose();
     _scrollController.dispose();
-    _typingAnimationController.dispose();
     super.dispose();
   }
 
@@ -198,7 +216,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<String> _sendMessageToBackend() async {
-    const String baseUrl = 'http://localhost:8000';
+    final String baseUrl = AppConfig.getBackendUrl();
     
     try {
       final requestBody = {
@@ -224,8 +242,17 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         throw Exception('Server returned status code: ${response.statusCode}. Error: $errorText');
       }
     } catch (e) {
+      // Enhanced error handling with debugging information
+      if (kDebugMode) {
+        print('Error connecting to backend at $baseUrl: $e');
+      }
+      
       if (e.toString().contains('XMLHttpRequest') || e.toString().contains('CORS')) {
-        throw Exception('CORS error: Please enable CORS on your backend server. Add fastapi-cors middleware.');
+        throw Exception('CORS error: Please enable CORS on your backend server.');
+      } else if (e.toString().contains('Connection refused') || e.toString().contains('Network is unreachable')) {
+        throw Exception('Cannot connect to server at $baseUrl. Make sure the backend is running.');
+      } else if (e.toString().contains('SocketException')) {
+        throw Exception('Network error: Check your internet connection and backend URL.');
       }
       throw Exception('Failed to connect to server: $e');
     }
@@ -388,7 +415,7 @@ class _ChatBubble extends StatelessWidget {
                       if (message.isTyping)
                         Container(
                           margin: const EdgeInsets.only(top: 8),
-                          child: _TypingIndicator(),
+                          child: const _TypingIndicator(),
                         ),
                     ],
                   ),
@@ -403,6 +430,8 @@ class _ChatBubble extends StatelessWidget {
 }
 
 class _TypingIndicator extends StatefulWidget {
+  const _TypingIndicator({super.key});
+  
   @override
   _TypingIndicatorState createState() => _TypingIndicatorState();
 }
