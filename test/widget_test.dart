@@ -11,20 +11,39 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_chat/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+  testWidgets('Chat app loads with welcome message', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Verify that the app title is present
+    expect(find.text('Flutter Chat'), findsOneWidget);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    // Verify that the welcome message is present
+    expect(find.text("Hello! I'm your AI assistant powered by Cerebras. How can I help you today?"), findsOneWidget);
+
+    // Verify that the message input field is present
+    expect(find.byType(TextField), findsOneWidget);
+
+    // Verify that the send button is present
+    expect(find.byIcon(Icons.send), findsOneWidget);
+  });
+
+  testWidgets('Can send a message', (WidgetTester tester) async {
+    // Build our app and trigger a frame.
+    await tester.pumpWidget(const MyApp());
+
+    // Enter text in the text field
+    await tester.enterText(find.byType(TextField), 'Hello, AI!');
+    
+    // Tap the send button
+    await tester.tap(find.byIcon(Icons.send));
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Verify that the user message appears
+    expect(find.text('Hello, AI!'), findsOneWidget);
+
+    // Clear any pending timers to avoid test cleanup issues
+    await tester.binding.delayed(Duration.zero);
+    await tester.pumpAndSettle();
   });
 }

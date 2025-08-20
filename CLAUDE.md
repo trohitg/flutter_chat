@@ -55,6 +55,28 @@ Run tests before committing changes to ensure functionality remains intact.
 
 - `cupertino_icons` - iOS-style icons
 - `flutter_lints` - Recommended linting rules for Flutter projects
+- `http` - HTTP client for backend communication
 - Core Flutter SDK provides Material Design components and state management
+
+## Backend Integration
+
+The app connects to a FastAPI backend server using Cerebras API for chat responses:
+- **Server URL**: `http://localhost:8000`
+- **Endpoint**: `POST /chat`
+- **Request format**: 
+  ```json
+  {
+    "messages": [
+      {"role": "user", "content": "Hello"},
+      {"role": "assistant", "content": "Hi there!"}
+    ],
+    "max_tokens": 1000,
+    "temperature": 0.7
+  }
+  ```
+- **Response format**: `{"response": "ai response", "usage": {...}}`
+- **Features**: Full conversation history, Cerebras GPT-OSS-120B model
+- **Timeout**: 30 seconds per request
+- **Error handling**: Graceful fallback messages for connection issues
 
 The project is configured for multi-platform deployment (Android, iOS, Web, Windows, Linux, macOS) with platform-specific build configurations already in place.
