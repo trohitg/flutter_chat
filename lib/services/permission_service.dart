@@ -35,6 +35,8 @@ class PermissionService {
       return true;
     }
     
+    if (!context.mounted) return false;
+    
     if (status.isDenied) {
       return await _showPermissionDialog(
         context,
@@ -62,6 +64,8 @@ class PermissionService {
     if (status.isGranted) {
       return true;
     }
+    
+    if (!context.mounted) return false;
     
     if (status.isDenied) {
       return await _showPermissionDialog(
