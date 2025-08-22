@@ -1,16 +1,83 @@
-# flutter_chat
+# Flutter Chat
 
-A new Flutter project.
+A Flutter chat application with AI-powered responses using Cerebras API integration.
+
+## Features
+
+- Cross-platform chat interface (Android, Web, Windows)
+- AI-powered responses via Cerebras GPT-OSS-120B model
+- Real-time conversation with full chat history
+- Material Design UI components
+- Hot reload development support
+
+## Backend Integration
+
+The app connects to a FastAPI backend server:
+- **Server URL**: `http://localhost:8000`
+- **Endpoint**: `POST /chat`
+- **Model**: Cerebras GPT-OSS-120B
+- **Timeout**: 30 seconds per request
+- **Error handling**: Graceful fallback for connection issues
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+### Prerequisites
+- Flutter SDK 3.5.4 or higher
+- Backend server running on `http://localhost:8000`
 
-A few resources to get you started if this is your first Flutter project:
+### Installation
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   flutter pub get
+   ```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### Running the App
+
+```bash
+# Run on connected device/emulator
+flutter run
+
+# Run in web browser
+flutter run -d chrome
+
+# Run on Windows desktop
+flutter run -d windows
+```
+
+### Development Commands
+
+```bash
+# Static analysis and linting
+flutter analyze
+
+# Run tests
+flutter test
+
+# Build for production
+flutter build apk        # Android
+flutter build web        # Web deployment
+
+# Development tools
+flutter clean            # Clean build artifacts
+flutter doctor          # Check Flutter installation
+```
+
+### Hot Reload
+- Press `r` for hot reload during development
+- Press `R` for hot restart
+- Press `q` to quit
+
+## Project Structure
+
+- `lib/main.dart` - Main application entry point
+- `test/widget_test.dart` - Widget tests
+- `pubspec.yaml` - Project dependencies and configuration
+- Platform-specific configurations in respective folders
+
+## Dependencies
+
+- `cupertino_icons` - iOS-style icons
+- `flutter_lints` - Recommended linting rules
+- `http` - HTTP client for backend communication

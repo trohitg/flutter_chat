@@ -13,7 +13,6 @@ This is a Flutter application called `flutter_chat` - currently a basic counter 
 - `flutter run -d chrome` - Run in web browser
 - `flutter run -d windows` - Run on Windows desktop
 - `flutter build apk` - Build Android APK
-- `flutter build ios` - Build iOS app (requires macOS)
 - `flutter build web` - Build for web deployment
 
 ### Development Tools
@@ -79,4 +78,4 @@ The app connects to a FastAPI backend server using Cerebras API for chat respons
 - **Timeout**: 30 seconds per request
 - **Error handling**: Graceful fallback messages for connection issues
 
-The project is configured for multi-platform deployment (Android, iOS, Web, Windows, Linux, macOS) with platform-specific build configurations already in place.
+The project is configured for multi-platform deployment (Android, Web, Windows) with platform-specific build configurations already in place.
