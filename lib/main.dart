@@ -323,10 +323,24 @@ class _ChatScreenState extends State<ChatScreen>
           timestamp: DateTime.now(), // Use current time as fallback
         ));
       }
+      
+      // Check if last message was from user but no assistant response
+      // This indicates an interrupted conversation
+      if (_conversationHistory.isNotEmpty && 
+          _conversationHistory.last['role'] == 'user') {
+        if (kDebugMode) {
+          print('Detected interrupted conversation - user message without AI response');
+        }
+        // The user's message is already loaded, no need to resend
+        // The UI will show the incomplete conversation state
+      }
     } else {
       // Initialize with welcome message if no history
       _initializeDefaultState();
     }
+    
+    // Ensure text controller is cleared on app resume
+    _textController.clear();
   }
   
   Future<void> _saveAppState() async {
@@ -391,6 +405,10 @@ class _ChatScreenState extends State<ChatScreen>
     
     // Refresh connectivity status
     _isConnected = ConnectivityService.instance.isConnected;
+    
+    // Clear text controller to prevent duplicate inputs
+    _textController.clear();
+    
     if (mounted) {
       setState(() {});
     }
@@ -435,6 +453,9 @@ class _ChatScreenState extends State<ChatScreen>
       'content': userMessage,
     });
     
+    // Save state immediately after user message to prevent loss
+    _saveAppState();
+    
     // Scroll to bottom after adding message
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToBottom();
@@ -457,9 +478,6 @@ class _ChatScreenState extends State<ChatScreen>
 
     // If connected, generate AI response
     _generateResponse();
-    
-    // Save state after each message
-    _saveAppState();
   }
   
   void _showNetworkError() {
@@ -512,6 +530,9 @@ class _ChatScreenState extends State<ChatScreen>
         'role': 'assistant',
         'content': response,
       });
+      
+      // Save state immediately after receiving response
+      await _saveAppState();
 
       setState(() {
         _messages.removeLast();
@@ -524,6 +545,9 @@ class _ChatScreenState extends State<ChatScreen>
       });
 
       await _typeMessage(response);
+      
+      // Save state again after typing is complete
+      await _saveAppState();
     } catch (e) {
       // Handle error case
       setState(() {
@@ -536,6 +560,9 @@ class _ChatScreenState extends State<ChatScreen>
           isTyping: false,
         ));
       });
+      
+      // Save state even on error to persist the error message
+      await _saveAppState();
     }
   }
 
