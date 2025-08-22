@@ -808,16 +808,9 @@ class _ChatScreenState extends State<ChatScreen>
             if (!permissions['overlay']['granted'] ||
                 !permissions['notification']['granted'])
               ElevatedButton(
-                onPressed: () async {
-                  final navigator = Navigator.of(context);
-                  final scaffoldContext = context;
-                  navigator.pop();
-                  if (mounted) {
-                    await PermissionService.instance
-                        .requestOverlayPermission(scaffoldContext);
-                    await PermissionService.instance
-                        .requestNotificationPermission(scaffoldContext);
-                  }
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _requestPermissions();
                 },
                 child: const Text('Grant Permissions'),
               ),
@@ -853,6 +846,15 @@ class _ChatScreenState extends State<ChatScreen>
         ),
       ],
     );
+  }
+
+  Future<void> _requestPermissions() async {
+    if (mounted) {
+      await PermissionService.instance.requestOverlayPermission(context);
+      if (mounted) {
+        await PermissionService.instance.requestNotificationPermission(context);
+      }
+    }
   }
 
   void _showAboutDialog() {
@@ -1165,7 +1167,7 @@ class _ChatBubble extends StatelessWidget {
 }
 
 class _TypingIndicator extends StatefulWidget {
-  const _TypingIndicator({super.key});
+  const _TypingIndicator();
 
   @override
   _TypingIndicatorState createState() => _TypingIndicatorState();
