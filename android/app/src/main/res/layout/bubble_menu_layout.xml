@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="60dp"
+    android:orientation="horizontal"
+    android:background="@drawable/bubble_menu_background"
+    android:gravity="center">
+
+    <!-- Main Genie Lamp Button (always visible) -->
+    <RelativeLayout
+        android:id="@+id/main_bubble"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:background="@drawable/bubble_background"
+        android:clickable="true"
+        android:focusable="true">
+
+        <ImageView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_centerInParent="true"
+            android:src="@drawable/genie_lamp_icon"
+            android:contentDescription="Genie Chat bubble"
+            android:scaleType="centerInside" />
+
+    </RelativeLayout>
+
+    <!-- Chat Button -->
+    <RelativeLayout
+        android:id="@+id/chat_button"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_marginStart="4dp"
+        android:background="@drawable/menu_button_background"
+        android:clickable="true"
+        android:focusable="true">
+
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_centerInParent="true"
+            android:src="@drawable/chat_icon"
+            android:contentDescription="Chat"
+            android:scaleType="centerInside" />
+
+    </RelativeLayout>
+
+    <!-- Voice Button (Decorative) -->
+    <RelativeLayout
+        android:id="@+id/voice_button"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_marginStart="4dp"
+        android:background="@drawable/menu_button_background"
+        android:clickable="false"
+        android:focusable="false"
+        android:alpha="0.7">
+
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_centerInParent="true"
+            android:src="@drawable/mic_icon"
+            android:contentDescription="Voice (Decorative)"
+            android:scaleType="centerInside" />
+
+    </RelativeLayout>
+
+</LinearLayout>

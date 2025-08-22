@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
+import 'services/app_lifecycle_service.dart';
+import 'services/permission_service.dart';
+import 'services/connectivity_service.dart';
 
 // Configuration class for easy backend URL management
 class AppConfig {
@@ -80,7 +85,40 @@ class BubbleService {
   }
 }
 
-void main() {
+void main() async {
+  // Enable performance optimization flags
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize services
+  await AppLifecycleService.instance.initialize();
+  await ConnectivityService.instance.initialize();
+  
+  // Set system UI preferences
+  SystemChrome.setApplicationSwitcherDescription(
+    ApplicationSwitcherDescription(
+      label: 'Flutter Chat',
+      primaryColor: 0xFF007AFF,
+    ),
+  );
+  
+  // Set preferred orientations
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
+  
+  // Configure system UI overlay style
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Color(0xFF002b36),
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
+  
   runApp(const MyApp());
 }
 
@@ -91,6 +129,8 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Flutter Chat',
+      debugShowCheckedModeBanner: false,
+      showPerformanceOverlay: kDebugMode ? false : false, // Set to true to show FPS overlay
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF002b36),
@@ -166,39 +206,155 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
+class _ChatScreenState extends State<ChatScreen> 
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   final List<ChatMessage> _messages = [];
-  final List<Map<String, String>> _conversationHistory = [];
+  final List<Map<String, dynamic>> _conversationHistory = [];
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _currentTypingText = '';
   bool _bubbleVisible = false;
+  Timer? _typingTimer;
+  late AnimationController _fadeController;
+  bool _isConnected = true;
+  bool _isInitialized = false;
+  StreamSubscription<bool>? _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
+    // Initialize animation controller for smooth animations
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
 
+    // Add text controller listener for real-time send button updates
+    _textController.addListener(() {
+      setState(() {}); // Trigger rebuild when text changes
+    });
+
+    // Initialize app state asynchronously
+    _initializeApp();
+  }
+  
+  Future<void> _initializeApp() async {
+    try {
+      // Load saved state and chat history
+      await _loadAppState();
+      
+      // Setup connectivity monitoring
+      _connectivitySubscription = ConnectivityService.instance.connectionStream.listen(
+        (isConnected) {
+          if (mounted) {
+            setState(() {
+              _isConnected = isConnected;
+            });
+            
+            if (!isConnected) {
+              _showNetworkError();
+            }
+          }
+        },
+      );
+      
+      // Check initial connectivity
+      _isConnected = ConnectivityService.instance.isConnected;
+      
+      // Load bubble state
+      _bubbleVisible = await AppLifecycleService.instance.loadBubbleState();
+      
+      setState(() {
+        _isInitialized = true;
+      });
+      
+      // Ensure smooth scrolling
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom();
+      });
+      
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error initializing app: $e');
+      }
+      // Show error and continue with default state
+      _initializeDefaultState();
+    }
+  }
+  
+  void _initializeDefaultState() {
     const welcomeMessage =
         "Hello! I'm your AI assistant powered by Cerebras. How can I help you today?";
-    _messages.add(ChatMessage(
-      text: welcomeMessage,
-      isUser: false,
-      timestamp: DateTime.now(),
-    ));
+    
+    if (_messages.isEmpty) {
+      _messages.add(ChatMessage(
+        text: welcomeMessage,
+        isUser: false,
+        timestamp: DateTime.now(),
+      ));
 
-    // Add welcome message to conversation history as system context
-    _conversationHistory.add({
-      'role': 'assistant',
-      'content': welcomeMessage,
+      // Add welcome message to conversation history as system context
+      _conversationHistory.add({
+        'role': 'assistant',
+        'content': welcomeMessage,
+      });
+    }
+    
+    setState(() {
+      _isInitialized = true;
+    });
+  }
+  
+  Future<void> _loadAppState() async {
+    // Load chat history
+    final savedHistory = await AppLifecycleService.instance.loadChatHistory();
+    if (savedHistory.isNotEmpty) {
+      _conversationHistory.clear();
+      _conversationHistory.addAll(savedHistory);
+      
+      // Convert to ChatMessage objects
+      _messages.clear();
+      for (final msg in savedHistory) {
+        _messages.add(ChatMessage(
+          text: msg['content'] ?? '',
+          isUser: msg['role'] == 'user',
+          timestamp: DateTime.now(), // Use current time as fallback
+        ));
+      }
+    } else {
+      // Initialize with welcome message if no history
+      _initializeDefaultState();
+    }
+  }
+  
+  Future<void> _saveAppState() async {
+    // Save chat history
+    await AppLifecycleService.instance.saveChatHistory(_conversationHistory);
+    
+    // Save bubble state
+    await AppLifecycleService.instance.saveBubbleState(_bubbleVisible);
+    
+    // Save other app state
+    await AppLifecycleService.instance.saveAppState({
+      'lastUsed': DateTime.now().toIso8601String(),
+      'messageCount': _messages.length,
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _typingTimer?.cancel();
+    _connectivitySubscription?.cancel();
+    _fadeController.dispose();
     _textController.dispose();
     _scrollController.dispose();
+    
+    // Save state before disposal
+    _saveAppState();
+    
     super.dispose();
   }
 
@@ -206,20 +362,56 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     
-    if (defaultTargetPlatform == TargetPlatform.android && _bubbleVisible) {
-      switch (state) {
-        case AppLifecycleState.resumed:
-          // App is in foreground - bubble should be hidden automatically by native code
-          break;
-        case AppLifecycleState.paused:
-        case AppLifecycleState.inactive:
-          // App is going to background - bubble should be shown automatically by native code
-          break;
-        case AppLifecycleState.detached:
-        case AppLifecycleState.hidden:
-          break;
-      }
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // App resumed - refresh connectivity and restore state
+        _onAppResumed();
+        break;
+      case AppLifecycleState.paused:
+        // App paused - save state
+        _onAppPaused();
+        break;
+      case AppLifecycleState.inactive:
+        // App inactive - prepare for possible backgrounding
+        break;
+      case AppLifecycleState.detached:
+        // App detached - final cleanup
+        _onAppDetached();
+        break;
+      case AppLifecycleState.hidden:
+        // App hidden - minimize resource usage
+        break;
     }
+  }
+  
+  void _onAppResumed() {
+    if (kDebugMode) {
+      print('App resumed');
+    }
+    
+    // Refresh connectivity status
+    _isConnected = ConnectivityService.instance.isConnected;
+    if (mounted) {
+      setState(() {});
+    }
+  }
+  
+  void _onAppPaused() {
+    if (kDebugMode) {
+      print('App paused - saving state');
+    }
+    
+    // Save current state
+    _saveAppState();
+  }
+  
+  void _onAppDetached() {
+    if (kDebugMode) {
+      print('App detached - final cleanup');
+    }
+    
+    // Final state save
+    _saveAppState();
   }
 
   void _handleSubmitted(String text) {
@@ -228,12 +420,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final userMessage = text.trim();
     _textController.clear();
 
-    // Add user message to conversation history
-    _conversationHistory.add({
-      'role': 'user',
-      'content': userMessage,
-    });
-
+    // Add user message to UI immediately
     setState(() {
       _messages.add(ChatMessage(
         text: userMessage,
@@ -242,8 +429,65 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       ));
     });
 
-    _scrollToBottom();
+    // Add user message to conversation history
+    _conversationHistory.add({
+      'role': 'user',
+      'content': userMessage,
+    });
+    
+    // Scroll to bottom after adding message
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToBottom();
+    });
+
+    // Check connectivity before sending to backend
+    if (!_isConnected) {
+      // Show offline message but keep the user message visible
+      setState(() {
+        _messages.add(ChatMessage(
+          text: "Message saved. Will be sent when connection is restored.",
+          isUser: false,
+          timestamp: DateTime.now(),
+        ));
+      });
+      
+      _saveAppState(); // Persist offline messages
+      return;
+    }
+
+    // If connected, generate AI response
     _generateResponse();
+    
+    // Save state after each message
+    _saveAppState();
+  }
+  
+  void _showNetworkError() {
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.wifi_off, color: Colors.white),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('No internet connection. Please check your network.'),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Retry',
+          textColor: Colors.white,
+          onPressed: () {
+            _isConnected = ConnectivityService.instance.isConnected;
+            setState(() {});
+          },
+        ),
+      ),
+    );
   }
 
   void _generateResponse() async {
@@ -348,21 +592,31 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _typeMessage(String message) async {
-    for (int i = 0; i <= message.length; i++) {
+    _typingTimer?.cancel();
+    
+    const int batchSize = 3; // Type multiple characters at once for better performance
+    
+    for (int i = 0; i <= message.length; i += batchSize) {
       if (!mounted) return;
 
+      final endIndex = (i + batchSize).clamp(0, message.length);
+      
       setState(() {
-        _currentTypingText = message.substring(0, i);
+        _currentTypingText = message.substring(0, endIndex);
         _messages.last = ChatMessage(
           text: _currentTypingText,
           isUser: false,
           timestamp: _messages.last.timestamp,
-          isTyping: i < message.length,
+          isTyping: endIndex < message.length,
         );
       });
 
       _scrollToBottom();
-      await Future.delayed(const Duration(milliseconds: 30));
+      
+      // Use timer for better performance control
+      if (endIndex < message.length) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
     }
   }
 
@@ -380,6 +634,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {
           _bubbleVisible = false;
         });
+        await AppLifecycleService.instance.saveBubbleState(false);
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Chat bubble hidden')),
@@ -387,36 +643,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         }
       }
     } else {
-      final canDraw = await BubbleService.canDrawOverlays();
-      if (!canDraw) {
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: const Text('Permission Required'),
-                content: const Text(
-                  'To show the chat bubble, this app needs permission to display over other apps. '
-                  'You will be redirected to the settings to grant this permission.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                  TextButton(
-                    onPressed: () async {
-                      Navigator.of(context).pop();
-                      await BubbleService.requestOverlayPermission();
-                    },
-                    child: const Text('Grant Permission'),
-                  ),
-                ],
-              );
-            },
-          );
-        }
-        return;
+      // Use proper permission service
+      final hasPermission = await PermissionService.instance.requestOverlayPermission(context);
+      
+      if (!hasPermission) {
+        return; // Permission denied or user cancelled
       }
 
       final success = await BubbleService.showBubble();
@@ -424,6 +655,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {
           _bubbleVisible = true;
         });
+        await AppLifecycleService.instance.saveBubbleState(true);
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Chat bubble is now visible')),
@@ -434,30 +667,273 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   }
 
   void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients && mounted) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOutCubic,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
         );
       }
     });
   }
+  
+  void _handleMenuAction(String action) async {
+    switch (action) {
+      case 'clear_history':
+        await _showClearHistoryDialog();
+        break;
+      case 'permissions':
+        await _showPermissionsDialog();
+        break;
+      case 'about':
+        _showAboutDialog();
+        break;
+    }
+  }
+  
+  Future<void> _showClearHistoryDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Clear Chat History'),
+          content: const Text(
+            'Are you sure you want to clear all chat messages? This action cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Clear'),
+            ),
+          ],
+        );
+      },
+    );
+    
+    if (result == true) {
+      setState(() {
+        _messages.clear();
+        _conversationHistory.clear();
+      });
+      
+      // Clear saved history
+      await AppLifecycleService.instance.clearAppData();
+      
+      // Add welcome message back
+      _initializeDefaultState();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chat history cleared')),
+        );
+      }
+    }
+  }
+  
+  Future<void> _showPermissionsDialog() async {
+    final permissions = await PermissionService.instance.getDetailedPermissionStatus();
+    
+    if (!mounted) return;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('App Permissions'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildPermissionRow(
+                'Overlay Permission',
+                permissions['overlay']['granted'] ?? false,
+                'Required for chat bubble feature',
+              ),
+              const SizedBox(height: 8),
+              _buildPermissionRow(
+                'Notifications',
+                permissions['notification']['granted'] ?? false,
+                'For important app updates',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+            if (!permissions['overlay']['granted'] || !permissions['notification']['granted'])
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await PermissionService.instance.requestOverlayPermission(context);
+                  await PermissionService.instance.requestNotificationPermission(context);
+                },
+                child: const Text('Grant Permissions'),
+              ),
+          ],
+        );
+      },
+    );
+  }
+  
+  Widget _buildPermissionRow(String name, bool granted, String description) {
+    return Row(
+      children: [
+        Icon(
+          granted ? Icons.check_circle : Icons.cancel,
+          color: granted ? Colors.green : Colors.red,
+          size: 20,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                description,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+  
+  void _showAboutDialog() {
+    showAboutDialog(
+      context: context,
+      applicationName: 'Flutter Chat',
+      applicationVersion: '1.0.0',
+      applicationIcon: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF6A1B9A), Color(0xFF4A148C)],
+          ),
+        ),
+        child: const Icon(
+          Icons.chat,
+          color: Colors.white,
+          size: 32,
+        ),
+      ),
+      children: [
+        const Text('AI-powered chat application with floating bubble support.'),
+        const SizedBox(height: 16),
+        const Text('Features:'),
+        const Text('• Real-time AI chat responses'),
+        const Text('• Floating chat bubble'),
+        const Text('• Automatic state preservation'),
+        const Text('• Network connectivity handling'),
+        const Text('• Accessibility support'),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Flutter Chat'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.bubble_chart),
-            onPressed: _toggleBubble,
-            tooltip: 'Toggle Chat Bubble',
+    // Show loading screen while initializing
+    if (!_isInitialized) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                'Initializing...',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      );
+    }
+    
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          // Save state when user navigates back
+          _saveAppState();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Row(
+            children: [
+              const Text('Flutter Chat'),
+              if (!_isConnected) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.wifi_off,
+                  color: Colors.red,
+                  size: 20,
+                  semanticLabel: 'No internet connection',
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: Icon(
+                _bubbleVisible ? Icons.bubble_chart : Icons.bubble_chart_outlined,
+                semanticLabel: _bubbleVisible ? 'Hide chat bubble' : 'Show chat bubble',
+              ),
+              onPressed: _toggleBubble,
+              tooltip: _bubbleVisible ? 'Hide Chat Bubble' : 'Show Chat Bubble',
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              tooltip: 'More options',
+              onSelected: _handleMenuAction,
+              itemBuilder: (BuildContext context) => [
+                const PopupMenuItem<String>(
+                  value: 'clear_history',
+                  child: ListTile(
+                    leading: Icon(Icons.clear_all),
+                    title: Text('Clear Chat History'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'permissions',
+                  child: ListTile(
+                    leading: Icon(Icons.security),
+                    title: Text('Permissions'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'about',
+                  child: ListTile(
+                    leading: Icon(Icons.info),
+                    title: Text('About'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       body: Column(
         children: [
           Expanded(
@@ -468,14 +944,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                 parent: AlwaysScrollableScrollPhysics(),
               ),
               itemCount: _messages.length,
+              cacheExtent: 1000.0, // Cache more items for smoother scrolling
+              addAutomaticKeepAlives: true,
+              addRepaintBoundaries: true,
+              addSemanticIndexes: false,
               itemBuilder: (context, index) {
-                return _ChatBubble(message: _messages[index]);
+                return RepaintBoundary(
+                  child: _ChatBubble(
+                    key: ValueKey(_messages[index].timestamp.millisecondsSinceEpoch),
+                    message: _messages[index],
+                  ),
+                );
               },
             ),
           ),
           _buildMessageInput(),
         ],
       ),
+    ),
     );
   }
 
@@ -494,23 +980,50 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       child: Row(
         children: [
           Expanded(
-            child: TextField(
-              controller: _textController,
-              decoration: const InputDecoration(
-                hintText: 'Message...',
+            child: Semantics(
+              label: 'Message input field',
+              hint: 'Type your message here',
+              child: TextField(
+                controller: _textController,
+                decoration: InputDecoration(
+                  hintText: _isConnected ? 'Message...' : 'No connection - message will be sent when online',
+                  suffixIcon: !_isConnected 
+                    ? Icon(Icons.wifi_off, color: Colors.red)
+                    : null,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16, 
+                    vertical: 12,
+                  ),
+                ),
+                maxLines: null,
+                maxLength: 1000,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (text) {
+                  if (text.trim().isNotEmpty) {
+                    _handleSubmitted(text);
+                  }
+                },
               ),
-              maxLines: null,
-              textInputAction: TextInputAction.send,
-              onSubmitted: _handleSubmitted,
             ),
           ),
           const SizedBox(width: 8),
-          IconButton(
-            onPressed: () => _handleSubmitted(_textController.text),
-            icon: const Icon(Icons.send),
-            style: IconButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          Semantics(
+            label: 'Send message',
+            hint: 'Send your message to the AI assistant',
+            child: IconButton(
+              onPressed: _textController.text.trim().isNotEmpty
+                ? () => _handleSubmitted(_textController.text)
+                : null,
+              icon: const Icon(Icons.send),
+              style: IconButton.styleFrom(
+                backgroundColor: _isConnected 
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.grey,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              ),
             ),
           ),
         ],
@@ -522,22 +1035,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 class _ChatBubble extends StatelessWidget {
   final ChatMessage message;
 
-  const _ChatBubble({required this.message});
+  const _ChatBubble({super.key, required this.message});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: message.isUser
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.start,
-              children: [
-                Container(
+    final messageTime = TimeOfDay.fromDateTime(message.timestamp).format(context);
+    
+    return Semantics(
+      label: '${message.isUser ? "Your message" : "AI response"}: ${message.text}',
+      hint: 'Sent at $messageTime',
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: message.isUser
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                children: [
+                  Container(
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.8,
                   ),
@@ -580,15 +1098,18 @@ class _ChatBubble extends StatelessWidget {
                       if (message.isTyping)
                         Container(
                           margin: const EdgeInsets.only(top: 8),
-                          child: const _TypingIndicator(),
+                          child: RepaintBoundary(
+                            child: const _TypingIndicator(),
+                          ),
                         ),
                     ],
                   ),
                 ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -602,7 +1123,7 @@ class _TypingIndicator extends StatefulWidget {
 }
 
 class _TypingIndicatorState extends State<_TypingIndicator>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _animation;
 
@@ -610,7 +1131,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 800),
       vsync: this,
     );
     _animation = Tween<double>(begin: 0.0, end: 1.0).animate(

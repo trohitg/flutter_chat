@@ -9,8 +9,8 @@
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:layout_centerInParent="true"
-        android:src="@drawable/chat_bubble_icon"
-        android:contentDescription="Chat bubble"
+        android:src="@drawable/genie_lamp_icon"
+        android:contentDescription="Genie Chat bubble"
         android:scaleType="centerInside" />
 
 </RelativeLayout>
