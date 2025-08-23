@@ -109,13 +109,11 @@ void main() async {
     DeviceOrientation.landscapeRight,
   ]);
 
-  // Configure system UI overlay style
+  // Configure system UI overlay style to follow system theme
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: Color(0xFF002b36),
-      systemNavigationBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.transparent,
     ),
   );
 
@@ -130,57 +128,11 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Chat',
       debugShowCheckedModeBanner: false,
-      showPerformanceOverlay:
-          kDebugMode ? false : false, // Set to true to show FPS overlay
       theme: ThemeData(
+        useMaterial3: true,
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF002b36),
-        colorScheme: const ColorScheme.dark(
-          brightness: Brightness.dark,
-          primary: Color(0xFF268bd2),
-          secondary: Color(0xFF2aa198),
-          surface: Color(0xFF073642),
-          surfaceContainerHighest: Color(0xFF073642),
-          onPrimary: Color(0xFF002b36),
-          onSecondary: Color(0xFF002b36),
-          onSurface: Color(0xFF839496),
-          onSurfaceVariant: Color(0xFF586e75),
-          outline: Color(0xFF586e75),
-        ),
-        cardTheme: const CardTheme(
-          color: Color(0xFF073642),
-          elevation: 0,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF002b36),
-          foregroundColor: Color(0xFF839496),
-          elevation: 0,
-          centerTitle: true,
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xFF073642),
-          hintStyle: const TextStyle(color: Color(0xFF586e75)),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF586e75), width: 1),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF586e75), width: 1),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF268bd2), width: 2),
-          ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        ),
-        textTheme: const TextTheme(
-          bodyLarge: TextStyle(color: Color(0xFF839496)),
-          bodyMedium: TextStyle(color: Color(0xFF839496)),
-        ),
       ),
+      themeMode: ThemeMode.dark,
       home: const ChatScreen(),
     );
   }
@@ -657,9 +609,6 @@ class _ChatScreenState extends State<ChatScreen>
       case 'clear_history':
         await _showClearHistoryDialog();
         break;
-      case 'permissions':
-        await _showPermissionsDialog();
-        break;
       case 'about':
         _showAboutDialog();
         break;
@@ -863,59 +812,37 @@ class _ChatScreenState extends State<ChatScreen>
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Row(
-            children: [
-              const Text('Flutter Chat'),
-              if (!_isConnected) ...[
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.wifi_off,
-                  color: Colors.red,
-                  size: 20,
-                  semanticLabel: 'No internet connection',
-                ),
-              ],
-            ],
-          ),
+          title: const Text('Flutter Chat'),
           actions: [
-            IconButton(
-              icon: Icon(
-                _bubbleVisible
-                    ? Icons.bubble_chart
-                    : Icons.bubble_chart_outlined,
-                semanticLabel:
-                    _bubbleVisible ? 'Hide chat bubble' : 'Show chat bubble',
+            if (!_isConnected)
+              const Icon(
+                Icons.wifi_off,
+                color: Colors.red,
+                semanticLabel: 'No internet connection',
               ),
-              onPressed: _toggleBubble,
-              tooltip: _bubbleVisible ? 'Hide Chat Bubble' : 'Show Chat Bubble',
-            ),
+            if (defaultTargetPlatform == TargetPlatform.android)
+              IconButton(
+                icon: Icon(
+                  _bubbleVisible ? Icons.bubble_chart : Icons.bubble_chart_outlined,
+                ),
+                onPressed: _toggleBubble,
+                tooltip: _bubbleVisible ? 'Hide Chat Bubble' : 'Show Chat Bubble',
+              ),
             PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
-              tooltip: 'More options',
               onSelected: _handleMenuAction,
-              itemBuilder: (BuildContext context) => [
-                const PopupMenuItem<String>(
+              itemBuilder: (context) => [
+                const PopupMenuItem(
                   value: 'clear_history',
                   child: ListTile(
                     leading: Icon(Icons.clear_all),
-                    title: Text('Clear Chat History'),
-                    contentPadding: EdgeInsets.zero,
+                    title: Text('Clear History'),
                   ),
                 ),
-                const PopupMenuItem<String>(
-                  value: 'permissions',
-                  child: ListTile(
-                    leading: Icon(Icons.security),
-                    title: Text('Permissions'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                const PopupMenuItem<String>(
+                const PopupMenuItem(
                   value: 'about',
                   child: ListTile(
                     leading: Icon(Icons.info),
                     title: Text('About'),
-                    contentPadding: EdgeInsets.zero,
                   ),
                 ),
               ],
@@ -955,67 +882,36 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildMessageInput() {
-    return Container(
+    return Padding(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        border: Border(
-          top: BorderSide(
-            color: Theme.of(context).colorScheme.surface,
-            width: 1,
-          ),
-        ),
-      ),
       child: Row(
         children: [
           Expanded(
-            child: Semantics(
-              label: 'Message input field',
-              hint: 'Type your message here',
-              child: TextField(
-                controller: _textController,
-                decoration: InputDecoration(
-                  hintText: _isConnected
-                      ? 'Message...'
-                      : 'No connection - message will be sent when online',
-                  suffixIcon: !_isConnected
-                      ? Icon(Icons.wifi_off, color: Colors.red)
-                      : null,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-                maxLines: null,
-                maxLength: 1000,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (text) {
-                  if (text.trim().isNotEmpty) {
-                    _handleSubmitted(text);
-                  }
-                },
+            child: TextField(
+              controller: _textController,
+              decoration: InputDecoration(
+                hintText: _isConnected ? 'Message...' : 'Offline',
+                border: const OutlineInputBorder(),
+                suffixIcon: !_isConnected
+                    ? const Icon(Icons.wifi_off, color: Colors.red)
+                    : null,
               ),
+              maxLines: null,
+              maxLength: 1000,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (text) {
+                if (text.trim().isNotEmpty && _isConnected) {
+                  _handleSubmitted(text);
+                }
+              },
             ),
           ),
           const SizedBox(width: 8),
-          Semantics(
-            label: 'Send message',
-            hint: 'Send your message to the AI assistant',
-            child: IconButton(
-              onPressed: _textController.text.trim().isNotEmpty
-                  ? () => _handleSubmitted(_textController.text)
-                  : null,
-              icon: const Icon(Icons.send),
-              style: IconButton.styleFrom(
-                backgroundColor: _isConnected
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.grey,
-                foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              ),
-            ),
+          IconButton.filled(
+            onPressed: (_textController.text.trim().isNotEmpty && _isConnected)
+                ? () => _handleSubmitted(_textController.text)
+                : null,
+            icon: const Icon(Icons.send),
           ),
         ],
       ),
