@@ -1,5 +1,4 @@
-import 'package:equatable/equatable.dart';
-import '../../../domain/entities/chat_message.dart';
+import 'chat_cubit.dart';
 
 enum ChatStatus {
   initial,
@@ -9,7 +8,7 @@ enum ChatStatus {
   error,
 }
 
-class ChatState extends Equatable {
+class ChatState {
   final List<ChatMessage> messages;
   final ChatStatus status;
   final bool isConnected;
@@ -22,9 +21,32 @@ class ChatState extends Equatable {
     this.error,
   });
 
-  /// Performance optimized state comparison using Equatable
   @override
-  List<Object?> get props => [messages, status, isConnected, error];
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is ChatState &&
+        other.messages.length == messages.length &&
+        _listEquals(other.messages, messages) &&
+        other.status == status &&
+        other.isConnected == isConnected &&
+        other.error == error;
+  }
+
+  @override
+  int get hashCode {
+    return messages.hashCode ^
+        status.hashCode ^
+        isConnected.hashCode ^
+        (error?.hashCode ?? 0);
+  }
+
+  bool _listEquals<T>(List<T> a, List<T> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   /// Immutable state updates
   ChatState copyWith({

@@ -1,15 +1,63 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../domain/entities/chat_message.dart';
-import '../../../domain/repositories/chat_repository.dart';
+import '../../../services/chat_service.dart';
+import '../../../services/app_lifecycle_service.dart';
 import '../../../services/connectivity_service.dart';
 import '../../../core/utils/performance_monitor.dart';
 import 'chat_state.dart';
 
-/// ChatCubit with Clean Architecture and Dependency Injection
+/// Simple ChatMessage data class - replaces domain entity
+class ChatMessage {
+  final String text;
+  final bool isUser;
+  final DateTime timestamp;
+  final bool isTyping;
+
+  const ChatMessage({
+    required this.text,
+    required this.isUser,
+    required this.timestamp,
+    this.isTyping = false,
+  });
+
+  ChatMessage copyWith({
+    String? text,
+    bool? isUser,
+    DateTime? timestamp,
+    bool? isTyping,
+  }) {
+    return ChatMessage(
+      text: text ?? this.text,
+      isUser: isUser ?? this.isUser,
+      timestamp: timestamp ?? this.timestamp,
+      isTyping: isTyping ?? this.isTyping,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is ChatMessage &&
+        other.text == text &&
+        other.isUser == isUser &&
+        other.timestamp == timestamp &&
+        other.isTyping == isTyping;
+  }
+
+  @override
+  int get hashCode {
+    return text.hashCode ^
+        isUser.hashCode ^
+        timestamp.hashCode ^
+        isTyping.hashCode;
+  }
+}
+
+/// ChatCubit with simplified service dependencies
 /// Handles all chat-related business logic and state management
 class ChatCubit extends Cubit<ChatState> {
-  final ChatRepository _chatRepository;
+  final ChatService _chatService;
+  final AppLifecycleService _appLifecycleService;
   final ConnectivityService _connectivityService;
   
   StreamSubscription<bool>? _connectivitySubscription;
@@ -18,9 +66,11 @@ class ChatCubit extends Cubit<ChatState> {
       "Hello! I'm your AI assistant powered by Cerebras. How can I help you today?";
 
   ChatCubit({
-    required ChatRepository chatRepository,
+    required ChatService chatService,
+    required AppLifecycleService appLifecycleService,
     required ConnectivityService connectivityService,
-  })  : _chatRepository = chatRepository,
+  })  : _chatService = chatService,
+        _appLifecycleService = appLifecycleService,
         _connectivityService = connectivityService,
         super(const ChatState()) {
     _initializeChat();
@@ -34,16 +84,25 @@ class ChatCubit extends Cubit<ChatState> {
     }
   }
 
-  /// Initialize chat with dependency injection and proper error handling
+  /// Initialize chat with direct service dependencies
   Future<void> _initializeChat() async {
     emit(state.copyWith(status: ChatStatus.loading));
 
     try {
       // Initialize dependencies
-      await _chatRepository.loadSession();
+      await _chatService.loadSession();
       
-      // Load chat history from repository
-      final messages = await _chatRepository.loadChatHistory();
+      // Load chat history from storage
+      final historyData = await _appLifecycleService.loadChatHistory();
+      
+      // Convert raw data to ChatMessage objects
+      final messages = historyData.map((data) {
+        return ChatMessage(
+          text: data['content'] ?? '',
+          isUser: data['role'] == 'user',
+          timestamp: DateTime.now(), // In a real app, we'd store actual timestamps
+        );
+      }).toList();
       
       // Add welcome message if no history exists
       final finalMessages = messages.isEmpty 
@@ -128,8 +187,8 @@ class ChatCubit extends Cubit<ChatState> {
     ));
 
     try {
-      // Send message through repository
-      final response = await _chatRepository.sendMessage(message);
+      // Send message through service
+      final response = await _chatService.sendMessage(message);
 
       // Create AI response message
       final aiMessage = ChatMessage(
@@ -147,8 +206,14 @@ class ChatCubit extends Cubit<ChatState> {
         error: null,
       ));
 
-      // Save to repository for persistence
-      await _chatRepository.saveChatHistory(finalMessages);
+      // Save to storage for persistence
+      final historyData = finalMessages.map((message) {
+        return {
+          'role': message.isUser ? 'user' : 'assistant',
+          'content': message.text,
+        };
+      }).toList();
+      await _appLifecycleService.saveChatHistory(historyData);
 
     } catch (e) {
       // Handle error case with user-friendly message
@@ -166,13 +231,13 @@ class ChatCubit extends Cubit<ChatState> {
     }
   }
 
-  /// Clear chat history with repository pattern
+  /// Clear chat history with direct service calls
   Future<void> clearHistory() async {
     emit(state.copyWith(status: ChatStatus.loading));
 
     try {
-      await _chatRepository.clearSession();
-      await _chatRepository.clearAppData();
+      await _chatService.clearSession();
+      await _appLifecycleService.clearAppData();
 
       emit(ChatState(
         messages: [_createWelcomeMessage()],
