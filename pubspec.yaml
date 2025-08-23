@@ -29,6 +29,9 @@ dependencies:
   # Permissions & Platform
   permission_handler: ^12.0.1
   connectivity_plus: ^6.0.5
+  
+  # State Management
+  flutter_bloc: ^9.1.1
 
 dev_dependencies:
   flutter_test:
