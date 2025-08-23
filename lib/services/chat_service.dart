@@ -17,10 +17,16 @@ class ChatService {
 
   ChatService._() : _apiService = ApiService.instance;
 
+  String? get currentSessionId => _currentSessionId;
+
   Future<void> ensureSession() async {
     if (_currentSessionId == null) {
       await _createSession();
     }
+  }
+
+  Future<void> createNewSession() async {
+    await _createSession();
   }
 
   Future<String> sendMessage(String message) async {

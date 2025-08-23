@@ -44,6 +44,7 @@ MessageResponse _$MessageResponseFromJson(Map<String, dynamic> json) =>
       content: json['content'] as String,
       role: json['role'] as String,
       createdAt: json['created_at'] as String,
+      imageUrl: json['image_url'] as String?,
     );
 
 Map<String, dynamic> _$MessageResponseToJson(MessageResponse instance) =>
@@ -52,6 +53,7 @@ Map<String, dynamic> _$MessageResponseToJson(MessageResponse instance) =>
       'content': instance.content,
       'role': instance.role,
       'created_at': instance.createdAt,
+      'image_url': instance.imageUrl,
     };
 
 DeleteSessionResponse _$DeleteSessionResponseFromJson(
@@ -72,6 +74,7 @@ MessageHistoryItem _$MessageHistoryItemFromJson(Map<String, dynamic> json) =>
       role: json['role'] as String,
       content: json['content'] as String,
       createdAt: json['created_at'] as String,
+      imageUrl: json['image_url'] as String?,
     );
 
 Map<String, dynamic> _$MessageHistoryItemToJson(MessageHistoryItem instance) =>
@@ -80,6 +83,7 @@ Map<String, dynamic> _$MessageHistoryItemToJson(MessageHistoryItem instance) =>
       'role': instance.role,
       'content': instance.content,
       'created_at': instance.createdAt,
+      'image_url': instance.imageUrl,
     };
 
 MessageHistoryResponse _$MessageHistoryResponseFromJson(

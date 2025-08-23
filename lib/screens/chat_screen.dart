@@ -56,7 +56,7 @@ class _ChatViewState extends State<_ChatView> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Flutter Chat'),
+          title: const Text('Ask Genie'),
           actions: [
             BlocBuilder<ChatCubit, ChatState>(
               buildWhen: (prev, curr) => prev.isConnected != curr.isConnected,
@@ -223,7 +223,7 @@ class _ChatViewState extends State<_ChatView> {
   void _showAboutDialog() {
     showAboutDialog(
       context: context,
-      applicationName: 'Flutter Chat',
+      applicationName: 'Ask Genie',
       applicationVersion: '1.0.0',
       applicationIcon: Container(
         width: 64,

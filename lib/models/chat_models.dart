@@ -53,12 +53,15 @@ class MessageResponse {
   final String role;
   @JsonKey(name: 'created_at')
   final String createdAt;
+  @JsonKey(name: 'image_url')
+  final String? imageUrl;
 
   MessageResponse({
     required this.id,
     required this.content,
     required this.role,
     required this.createdAt,
+    this.imageUrl,
   });
 
   factory MessageResponse.fromJson(Map<String, dynamic> json) =>
@@ -87,12 +90,15 @@ class MessageHistoryItem {
   final String content;
   @JsonKey(name: 'created_at')
   final String createdAt;
+  @JsonKey(name: 'image_url')
+  final String? imageUrl;
 
   MessageHistoryItem({
     required this.id,
     required this.role,
     required this.content,
     required this.createdAt,
+    this.imageUrl,
   });
 
   factory MessageHistoryItem.fromJson(Map<String, dynamic> json) =>

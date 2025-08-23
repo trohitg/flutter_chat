@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:retrofit/retrofit.dart';
 import '../models/chat_models.dart';
@@ -15,6 +16,14 @@ abstract class ChatApi {
   Future<MessageResponse> sendMessageToSession(
     @Path('sessionId') String sessionId,
     @Body() MessageRequest request,
+  );
+
+  @POST('/api/v1/images/sessions/{sessionId}/messages')
+  @MultiPart()
+  Future<MessageResponse> sendImageMessage(
+    @Path('sessionId') String sessionId,
+    @Part(name: 'message') String message,
+    @Part(name: 'image') File image,
   );
 
   @DELETE('/api/v1/sessions/{sessionId}')

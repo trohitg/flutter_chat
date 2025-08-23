@@ -32,7 +32,7 @@ void main() {
     
     // Verify MaterialApp properties
     final MaterialApp app = tester.widget(find.byType(MaterialApp));
-    expect(app.title, equals('Flutter Chat'));
+    expect(app.title, equals('Ask Genie'));
     expect(app.debugShowCheckedModeBanner, isFalse);
     expect(app.themeMode, equals(ThemeMode.dark));
   });

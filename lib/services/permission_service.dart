@@ -50,7 +50,7 @@ class PermissionService {
       return await _showSettingsDialog(
         context,
         'Permission Required',
-        'Chat bubble permission was denied. Please enable it manually in Settings → Apps → Flutter Chat → Display over other apps.',
+        'Chat bubble permission was denied. Please enable it manually in Settings → Apps → Ask Genie → Display over other apps.',
       );
     }
     
@@ -80,7 +80,7 @@ class PermissionService {
       return await _showSettingsDialog(
         context,
         'Notification Permission Required',
-        'Notification permission was denied. Please enable it manually in Settings → Apps → Flutter Chat → Notifications.',
+        'Notification permission was denied. Please enable it manually in Settings → Apps → Ask Genie → Notifications.',
       );
     }
     

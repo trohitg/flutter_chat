@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../services/chat_service.dart';
+import '../../../services/image_chat_service.dart';
 import '../../../services/app_lifecycle_service.dart';
 import '../../../services/connectivity_service.dart';
 import '../../../core/utils/performance_monitor.dart';
@@ -12,12 +14,14 @@ class ChatMessage {
   final bool isUser;
   final DateTime timestamp;
   final bool isTyping;
+  final String? imageUrl;
 
   const ChatMessage({
     required this.text,
     required this.isUser,
     required this.timestamp,
     this.isTyping = false,
+    this.imageUrl,
   });
 
   ChatMessage copyWith({
@@ -25,12 +29,14 @@ class ChatMessage {
     bool? isUser,
     DateTime? timestamp,
     bool? isTyping,
+    String? imageUrl,
   }) {
     return ChatMessage(
       text: text ?? this.text,
       isUser: isUser ?? this.isUser,
       timestamp: timestamp ?? this.timestamp,
       isTyping: isTyping ?? this.isTyping,
+      imageUrl: imageUrl ?? this.imageUrl,
     );
   }
 
@@ -41,7 +47,8 @@ class ChatMessage {
         other.text == text &&
         other.isUser == isUser &&
         other.timestamp == timestamp &&
-        other.isTyping == isTyping;
+        other.isTyping == isTyping &&
+        other.imageUrl == imageUrl;
   }
 
   @override
@@ -49,7 +56,8 @@ class ChatMessage {
     return text.hashCode ^
         isUser.hashCode ^
         timestamp.hashCode ^
-        isTyping.hashCode;
+        isTyping.hashCode ^
+        imageUrl.hashCode;
   }
 }
 
@@ -57,6 +65,7 @@ class ChatMessage {
 /// Handles all chat-related business logic and state management
 class ChatCubit extends Cubit<ChatState> {
   final ChatService _chatService;
+  final ImageChatService _imageChatService;
   final AppLifecycleService _appLifecycleService;
   final ConnectivityService _connectivityService;
   
@@ -67,9 +76,11 @@ class ChatCubit extends Cubit<ChatState> {
 
   ChatCubit({
     required ChatService chatService,
+    required ImageChatService imageChatService,
     required AppLifecycleService appLifecycleService,
     required ConnectivityService connectivityService,
   })  : _chatService = chatService,
+        _imageChatService = imageChatService,
         _appLifecycleService = appLifecycleService,
         _connectivityService = connectivityService,
         super(const ChatState()) {
@@ -101,6 +112,7 @@ class ChatCubit extends Cubit<ChatState> {
           text: data['content'] ?? '',
           isUser: data['role'] == 'user',
           timestamp: DateTime.now(), // In a real app, we'd store actual timestamps
+          imageUrl: data['image_url'],
         );
       }).toList();
       
@@ -219,6 +231,115 @@ class ChatCubit extends Cubit<ChatState> {
       // Handle error case with user-friendly message
       final errorMessage = ChatMessage(
         text: 'Sorry, I\'m having trouble connecting to the server. Please try again.',
+        isUser: false,
+        timestamp: DateTime.now(),
+      );
+
+      emit(state.copyWith(
+        messages: [...updatedMessages, errorMessage],
+        status: ChatStatus.error,
+        error: e.toString(),
+      ));
+    }
+  }
+
+  /// Send image message with text
+  Future<void> sendImageMessage(String message, XFile imageFile) async {
+    if (message.trim().isEmpty) {
+      // Show instruction message when image is sent without text
+      final instructionMessage = ChatMessage(
+        text: "Please include the instructions for image.",
+        isUser: false,
+        timestamp: DateTime.now(),
+      );
+      
+      emit(state.copyWith(
+        messages: [...state.messages, instructionMessage],
+        status: ChatStatus.loaded,
+      ));
+      return;
+    }
+
+    // Create user message with image
+    final userMessage = ChatMessage(
+      text: message.trim(),
+      isUser: true,
+      timestamp: DateTime.now(),
+      imageUrl: imageFile.path, // Store XFile path for platform-aware display
+    );
+
+    // Add user message immediately to UI
+    final updatedMessages = [...state.messages, userMessage];
+    emit(state.copyWith(
+      messages: updatedMessages,
+      status: ChatStatus.sendingMessage,
+    ));
+
+    // Handle offline scenario
+    if (!state.isConnected) {
+      final offlineMessage = ChatMessage(
+        text: "Image saved. Will be sent when connection is restored.",
+        isUser: false,
+        timestamp: DateTime.now(),
+      );
+      
+      emit(state.copyWith(
+        messages: [...updatedMessages, offlineMessage],
+        status: ChatStatus.loaded,
+      ));
+      return;
+    }
+
+    // Show typing indicator
+    final typingMessage = ChatMessage(
+      text: '',
+      isUser: false,
+      timestamp: DateTime.now(),
+      isTyping: true,
+    );
+    
+    emit(state.copyWith(
+      messages: [...updatedMessages, typingMessage],
+    ));
+
+    try {
+      // Send image message through service - ImageChatService handles platform differences
+      final response = await _imageChatService.sendImageMessage(message, imageFile);
+
+      // Create AI response message - AI responses should only show text analysis, no images
+      final aiMessage = ChatMessage(
+        text: response.content,
+        isUser: false,
+        timestamp: DateTime.now(),
+        // Note: AI responses to image messages should not display images, only text analysis
+      );
+
+      // Update messages without typing indicator
+      final finalMessages = [...updatedMessages, aiMessage];
+      
+      emit(state.copyWith(
+        messages: finalMessages,
+        status: ChatStatus.loaded,
+        error: null,
+      ));
+
+      // Save to storage for persistence
+      final historyData = finalMessages.map((message) {
+        final data = {
+          'role': message.isUser ? 'user' : 'assistant',
+          'content': message.text,
+        };
+        if (message.imageUrl != null) {
+          data['image_url'] = message.imageUrl!;
+        }
+        return data;
+      }).toList();
+      await _appLifecycleService.saveChatHistory(historyData);
+
+    } catch (e) {
+      // Handle error case with user-friendly message
+      final errorMessage = ChatMessage(
+        text: 'Sorry, I\'m having trouble processing the image. Please try again.',
         isUser: false,
         timestamp: DateTime.now(),
       );

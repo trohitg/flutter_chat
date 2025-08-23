@@ -55,6 +55,7 @@ class ApiService {
   }
 
   ChatApi get chatApi => _chatApi;
+  Dio get dio => _dio;
 
   String _getBaseUrl() {
     if (kIsWeb) {

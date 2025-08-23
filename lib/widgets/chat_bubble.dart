@@ -1,4 +1,7 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../features/chat/cubit/chat_cubit.dart';
 import '../core/config/app_config.dart';
 
@@ -6,6 +9,71 @@ class ChatBubble extends StatelessWidget {
   final ChatMessage message;
 
   const ChatBubble({super.key, required this.message});
+
+  bool _isNetworkUrl(String url) {
+    return url.startsWith('http://') || url.startsWith('https://');
+  }
+
+  Widget _buildImage(String imageUrl, {BoxFit fit = BoxFit.cover, double? height}) {
+    if (_isNetworkUrl(imageUrl)) {
+      return CachedNetworkImage(
+        imageUrl: imageUrl,
+        fit: fit,
+        height: height,
+        placeholder: (context, url) => Container(
+          height: height ?? 100,
+          color: Colors.grey[300],
+          child: const Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+        errorWidget: (context, url, error) => Container(
+          height: height ?? 100,
+          color: Colors.grey[300],
+          child: const Icon(
+            Icons.broken_image,
+            color: Colors.grey,
+            size: 32,
+          ),
+        ),
+      );
+    } else {
+      // Local file - platform aware handling
+      if (kIsWeb) {
+        // On web, the XFile path is a blob URL that can be used directly
+        return Image.network(
+          imageUrl,
+          fit: fit,
+          height: height,
+          errorBuilder: (context, error, stackTrace) => Container(
+            height: height ?? 100,
+            color: Colors.grey[300],
+            child: const Icon(
+              Icons.broken_image,
+              color: Colors.grey,
+              size: 32,
+            ),
+          ),
+        );
+      } else {
+        // On mobile platforms, use File
+        return Image.file(
+          File(imageUrl),
+          fit: fit,
+          height: height,
+          errorBuilder: (context, error, stackTrace) => Container(
+            height: height ?? 100,
+            color: Colors.grey[300],
+            child: const Icon(
+              Icons.broken_image,
+              color: Colors.grey,
+              size: 32,
+            ),
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,16 +125,32 @@ class ChatBubble extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          message.text,
-                          style: TextStyle(
-                            color: message.isUser
-                                ? Theme.of(context).colorScheme.onPrimary
-                                : Theme.of(context).colorScheme.onSurface,
-                            fontSize: 16,
-                            height: 1.4,
+                        if (message.imageUrl != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            constraints: const BoxConstraints(
+                              maxHeight: 200,
+                              maxWidth: 300,
+                            ),
+                            child: GestureDetector(
+                              onTap: () => _showFullScreenImage(context, message.imageUrl!),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: _buildImage(message.imageUrl!),
+                              ),
+                            ),
                           ),
-                        ),
+                        if (message.text.isNotEmpty)
+                          Text(
+                            message.text,
+                            style: TextStyle(
+                              color: message.isUser
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                  : Theme.of(context).colorScheme.onSurface,
+                              fontSize: 16,
+                              height: 1.4,
+                            ),
+                          ),
                         if (message.isTyping)
                           Container(
                             margin: const EdgeInsets.only(top: 8),
@@ -78,6 +162,82 @@ class ChatBubble extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFullScreenImage(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (context) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            Center(
+              child: InteractiveViewer(
+                panEnabled: true,
+                boundaryMargin: const EdgeInsets.all(20.0),
+                minScale: 0.5,
+                maxScale: 3.0,
+                child: _isNetworkUrl(imageUrl)
+                  ? CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      fit: BoxFit.contain,
+                      placeholder: (context, url) => const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      ),
+                      errorWidget: (context, url, error) => const Center(
+                        child: Icon(
+                          Icons.broken_image,
+                          color: Colors.white,
+                          size: 64,
+                        ),
+                      ),
+                    )
+                  : kIsWeb
+                      ? Image.network(
+                          imageUrl,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => const Center(
+                            child: Icon(
+                              Icons.broken_image,
+                              color: Colors.white,
+                              size: 64,
+                            ),
+                          ),
+                        )
+                      : Image.file(
+                          File(imageUrl),
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => const Center(
+                            child: Icon(
+                              Icons.broken_image,
+                              color: Colors.white,
+                              size: 64,
+                            ),
+                          ),
+                        ),
+              ),
+            ),
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              right: 16,
+              child: IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(
+                  Icons.close,
+                  color: Colors.white,
+                  size: 30,
+                ),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black54,
+                  padding: const EdgeInsets.all(8),
+                ),
               ),
             ),
           ],
