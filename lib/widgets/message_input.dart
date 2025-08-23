@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../features/chat/cubit/chat_cubit.dart';
+import '../features/chat/cubit/chat_state.dart';
+import '../core/utils/performance_monitor.dart';
 
 class MessageInput extends StatefulWidget {
   const MessageInput({super.key});
@@ -11,13 +13,21 @@ class MessageInput extends StatefulWidget {
 
 class _MessageInputState extends State<MessageInput> {
   final _controller = TextEditingController();
+  bool _hasText = false;
   
   @override
   void initState() {
     super.initState();
-    _controller.addListener(() {
-      setState(() {}); // Trigger rebuild for send button state
-    });
+    _controller.addListener(_onTextChanged);
+  }
+  
+  void _onTextChanged() {
+    final hasText = _controller.text.trim().isNotEmpty;
+    if (_hasText != hasText) {
+      setState(() {
+        _hasText = hasText;
+      });
+    }
   }
   
   @override
@@ -28,10 +38,11 @@ class _MessageInputState extends State<MessageInput> {
 
   @override
   Widget build(BuildContext context) {
+    PerformanceMonitor.trackRebuild('MessageInput');
     return BlocBuilder<ChatCubit, ChatState>(
       buildWhen: (prev, curr) => 
         prev.isConnected != curr.isConnected || 
-        prev.isLoading != curr.isLoading,
+        prev.isSendingMessage != curr.isSendingMessage,
       builder: (context, state) {
         return Padding(
           padding: const EdgeInsets.all(16),
@@ -50,18 +61,18 @@ class _MessageInputState extends State<MessageInput> {
                   maxLines: null,
                   maxLength: 1000,
                   textInputAction: TextInputAction.send,
-                  enabled: !state.isLoading,
+                  enabled: !state.isSendingMessage,
                   onSubmitted: _sendMessage,
                 ),
               ),
               const SizedBox(width: 8),
               IconButton.filled(
-                onPressed: (_controller.text.trim().isNotEmpty && 
+                onPressed: (_hasText && 
                           state.isConnected &&
-                          !state.isLoading)
+                          !state.isSendingMessage)
                     ? () => _sendMessage(_controller.text)
                     : null,
-                icon: state.isLoading 
+                icon: state.isSendingMessage 
                   ? const SizedBox(
                       width: 20, 
                       height: 20,

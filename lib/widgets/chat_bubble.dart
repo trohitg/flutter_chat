@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../features/chat/cubit/chat_cubit.dart';
+import '../domain/entities/chat_message.dart';
+import '../core/config/app_config.dart';
 
 class ChatBubble extends StatelessWidget {
   final ChatMessage message;
@@ -94,51 +95,90 @@ class TypingIndicator extends StatefulWidget {
 }
 
 class TypingIndicatorState extends State<TypingIndicator>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _animation;
+    with TickerProviderStateMixin {
+  late List<AnimationController> _controllers;
+  late List<Animation<double>> _animations;
+
+  static const List<int> _delays = [0, 200, 400]; // Staggered animation delays
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-    _animationController.repeat(reverse: true);
+    final baseDuration = 800 + AppConfig.getPerformanceSetting<int>('typingIndicatorDelay');
+    
+    // Create staggered controllers for better performance
+    _controllers = List.generate(3, (index) {
+      return AnimationController(
+        duration: Duration(milliseconds: baseDuration),
+        vsync: this,
+      );
+    });
+    
+    // Create animations with different curves for natural effect
+    _animations = _controllers.map((controller) {
+      return Tween<double>(begin: 0.3, end: 1.0).animate(
+        CurvedAnimation(parent: controller, curve: Curves.easeInOut),
+      );
+    }).toList();
+    
+    // Start animations with delays
+    _startStaggeredAnimations();
+  }
+
+  void _startStaggeredAnimations() {
+    for (int i = 0; i < _controllers.length; i++) {
+      Future.delayed(Duration(milliseconds: _delays[i]), () {
+        if (mounted) {
+          _controllers[i].repeat(reverse: true);
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    for (final controller in _controllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (index) {
-            return Container(
-              width: 6,
-              height: 6,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFF586e75).withOpacity(0.3 +
-                    (_animation.value * 0.7) *
-                        (1 - (index * 0.2).clamp(0.0, 1.0))),
-                shape: BoxShape.circle,
-              ),
-            );
-          }),
-        );
-      },
+    return RepaintBoundary(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(3, (index) {
+          return AnimatedBuilder(
+            animation: _animations[index],
+            child: const _TypingDot(), // Pre-built const child
+            builder: (context, child) {
+              return Opacity(
+                opacity: _animations[index].value,
+                child: child,
+              );
+            },
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// Optimized const dot widget to reduce rebuilds
+class _TypingDot extends StatelessWidget {
+  const _TypingDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 6,
+      height: 6,
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      decoration: const BoxDecoration(
+        color: Color(0xFF586e75),
+        shape: BoxShape.circle,
+      ),
     );
   }
 }

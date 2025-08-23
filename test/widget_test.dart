@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_chat/main.dart';
+import 'package:flutter_chat/core/di/service_locator.dart';
+import 'package:flutter_chat/services/bubble_service.dart';
+import 'package:flutter_chat/core/config/app_config.dart';
 
 void main() {
+  setUp(() async {
+    // Reset and initialize dependencies for each test
+    await resetDependencies();
+    await initializeDependencies();
+  });
+
   testWidgets('App starts and shows basic UI', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp());

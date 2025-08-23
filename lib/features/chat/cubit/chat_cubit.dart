@@ -1,191 +1,205 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../services/chat_service.dart';
+import '../../../domain/entities/chat_message.dart';
+import '../../../domain/repositories/chat_repository.dart';
 import '../../../services/connectivity_service.dart';
-import '../../../services/app_lifecycle_service.dart';
+import '../../../core/utils/performance_monitor.dart';
+import 'chat_state.dart';
 
-class ChatMessage {
-  final String text;
-  final bool isUser;
-  final DateTime timestamp;
-  final bool isTyping;
-
-  ChatMessage({
-    required this.text,
-    required this.isUser,
-    required this.timestamp,
-    this.isTyping = false,
-  });
-}
-
-class ChatState {
-  final List<ChatMessage> messages;
-  final bool isLoading;
-  final bool isConnected;
-  final String? error;
-  
-  const ChatState({
-    this.messages = const [],
-    this.isLoading = false,
-    this.isConnected = true,
-    this.error,
-  });
-  
-  ChatState copyWith({
-    List<ChatMessage>? messages,
-    bool? isLoading,
-    bool? isConnected,
-    String? error,
-  }) => ChatState(
-    messages: messages ?? this.messages,
-    isLoading: isLoading ?? this.isLoading,
-    isConnected: isConnected ?? this.isConnected,
-    error: error ?? this.error,
-  );
-}
-
+/// ChatCubit with Clean Architecture and Dependency Injection
+/// Handles all chat-related business logic and state management
 class ChatCubit extends Cubit<ChatState> {
-  final ChatService _chatService = ChatService.instance;
-  final ConnectivityService _connectivityService = ConnectivityService.instance;
+  final ChatRepository _chatRepository;
+  final ConnectivityService _connectivityService;
   
-  ChatCubit() : super(const ChatState()) {
+  StreamSubscription<bool>? _connectivitySubscription;
+  
+  static const String _welcomeMessage = 
+      "Hello! I'm your AI assistant powered by Cerebras. How can I help you today?";
+
+  ChatCubit({
+    required ChatRepository chatRepository,
+    required ConnectivityService connectivityService,
+  })  : _chatRepository = chatRepository,
+        _connectivityService = connectivityService,
+        super(const ChatState()) {
     _initializeChat();
   }
-  
+
+  /// Optimized emit that only emits when state actually changes
+  void _safeEmit(ChatState newState) {
+    PerformanceMonitor.trackRebuild('ChatCubit.emit');
+    if (state != newState) {
+      emit(newState);
+    }
+  }
+
+  /// Initialize chat with dependency injection and proper error handling
   Future<void> _initializeChat() async {
-    emit(state.copyWith(isLoading: true));
-    
+    emit(state.copyWith(status: ChatStatus.loading));
+
     try {
-      await _chatService.loadSession();
-      final history = await AppLifecycleService.instance.loadChatHistory();
+      // Initialize dependencies
+      await _chatRepository.loadSession();
       
-      final messages = <ChatMessage>[];
-      for (final msg in history) {
-        messages.add(ChatMessage(
-          text: msg['content'] ?? '',
-          isUser: msg['role'] == 'user',
-          timestamp: DateTime.now(),
-        ));
-      }
+      // Load chat history from repository
+      final messages = await _chatRepository.loadChatHistory();
       
-      // Add welcome message if no history
-      if (messages.isEmpty) {
-        messages.add(ChatMessage(
-          text: "Hello! I'm your AI assistant powered by Cerebras. How can I help you today?",
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
-      }
-      
-      emit(state.copyWith(
-        messages: messages,
-        isLoading: false,
+      // Add welcome message if no history exists
+      final finalMessages = messages.isEmpty 
+          ? [_createWelcomeMessage()]
+          : messages;
+
+      // Setup connectivity monitoring
+      _setupConnectivityListener();
+
+      _safeEmit(state.copyWith(
+        messages: finalMessages,
+        status: ChatStatus.loaded,
         isConnected: _connectivityService.isConnected,
       ));
-      
-      // Listen to connectivity changes
-      _connectivityService.connectionStream.listen((connected) {
-        if (!isClosed) {
-          emit(state.copyWith(isConnected: connected));
-        }
-      });
-      
+
     } catch (e) {
+      // Fallback to welcome message on error
       emit(state.copyWith(
-        isLoading: false, 
+        messages: [_createWelcomeMessage()],
+        status: ChatStatus.error,
         error: e.toString(),
-        messages: [
-          ChatMessage(
-            text: "Hello! I'm your AI assistant powered by Cerebras. How can I help you today?",
-            isUser: false,
-            timestamp: DateTime.now(),
-          ),
-        ],
+        isConnected: _connectivityService.isConnected,
       ));
     }
   }
-  
+
+  /// Setup connectivity monitoring with proper cleanup
+  void _setupConnectivityListener() {
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = _connectivityService.connectionStream.listen(
+      (isConnected) {
+        if (!isClosed) {
+          _safeEmit(state.copyWith(isConnected: isConnected));
+        }
+      },
+    );
+  }
+
+  /// Send message with improved state management and error handling
   Future<void> sendMessage(String message) async {
+    if (message.trim().isEmpty) return;
+
+    // Create user message
     final userMessage = ChatMessage(
-      text: message,
+      text: message.trim(),
       isUser: true,
       timestamp: DateTime.now(),
     );
-    
+
+    // Add user message immediately to UI
     final updatedMessages = [...state.messages, userMessage];
-    emit(state.copyWith(messages: updatedMessages));
-    
+    emit(state.copyWith(
+      messages: updatedMessages,
+      status: ChatStatus.sendingMessage,
+    ));
+
+    // Handle offline scenario
     if (!state.isConnected) {
       final offlineMessage = ChatMessage(
         text: "Message saved. Will be sent when connection is restored.",
         isUser: false,
         timestamp: DateTime.now(),
       );
-      emit(state.copyWith(messages: [...updatedMessages, offlineMessage]));
+      
+      emit(state.copyWith(
+        messages: [...updatedMessages, offlineMessage],
+        status: ChatStatus.loaded,
+      ));
       return;
     }
-    
-    // Add typing indicator
+
+    // Show typing indicator
     final typingMessage = ChatMessage(
       text: '',
       isUser: false,
       timestamp: DateTime.now(),
       isTyping: true,
     );
-    emit(state.copyWith(messages: [...updatedMessages, typingMessage]));
     
+    emit(state.copyWith(
+      messages: [...updatedMessages, typingMessage],
+    ));
+
     try {
-      final response = await _chatService.sendMessage(message);
-      
-      // Remove typing indicator and add actual response
-      final messagesWithoutTyping = [...updatedMessages];
+      // Send message through repository
+      final response = await _chatRepository.sendMessage(message);
+
+      // Create AI response message
       final aiMessage = ChatMessage(
         text: response,
         isUser: false,
         timestamp: DateTime.now(),
       );
+
+      // Update messages without typing indicator
+      final finalMessages = [...updatedMessages, aiMessage];
       
-      final finalMessages = [...messagesWithoutTyping, aiMessage];
-      emit(state.copyWith(messages: finalMessages, isLoading: false));
-      
-      // Save state
-      final history = await AppLifecycleService.instance.loadChatHistory();
-      await AppLifecycleService.instance.saveChatHistory([
-        ...history,
-        {'role': 'user', 'content': message},
-        {'role': 'assistant', 'content': response},
-      ]);
-      
+      emit(state.copyWith(
+        messages: finalMessages,
+        status: ChatStatus.loaded,
+        error: null,
+      ));
+
+      // Save to repository for persistence
+      await _chatRepository.saveChatHistory(finalMessages);
+
     } catch (e) {
-      // Remove typing indicator and add error message
-      final messagesWithoutTyping = [...updatedMessages];
+      // Handle error case with user-friendly message
       final errorMessage = ChatMessage(
         text: 'Sorry, I\'m having trouble connecting to the server. Please try again.',
         isUser: false,
         timestamp: DateTime.now(),
       );
-      
+
       emit(state.copyWith(
-        messages: [...messagesWithoutTyping, errorMessage],
-        isLoading: false,
+        messages: [...updatedMessages, errorMessage],
+        status: ChatStatus.error,
         error: e.toString(),
       ));
     }
   }
-  
+
+  /// Clear chat history with repository pattern
   Future<void> clearHistory() async {
-    await ChatService.instance.clearSession();
-    await AppLifecycleService.instance.clearAppData();
-    
-    const welcomeMessage = "Hello! I'm your AI assistant powered by Cerebras. How can I help you today?";
-    emit(ChatState(
-      messages: [
-        ChatMessage(
-          text: welcomeMessage,
-          isUser: false,
-          timestamp: DateTime.now(),
-        ),
-      ],
-      isConnected: state.isConnected,
-    ));
+    emit(state.copyWith(status: ChatStatus.loading));
+
+    try {
+      await _chatRepository.clearSession();
+      await _chatRepository.clearAppData();
+
+      emit(ChatState(
+        messages: [_createWelcomeMessage()],
+        status: ChatStatus.loaded,
+        isConnected: state.isConnected,
+      ));
+
+    } catch (e) {
+      emit(state.copyWith(
+        status: ChatStatus.error,
+        error: 'Failed to clear history: ${e.toString()}',
+      ));
+    }
+  }
+
+  /// Create welcome message as a reusable method
+  ChatMessage _createWelcomeMessage() {
+    return ChatMessage(
+      text: _welcomeMessage,
+      isUser: false,
+      timestamp: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<void> close() {
+    _connectivitySubscription?.cancel();
+    return super.close();
   }
 }

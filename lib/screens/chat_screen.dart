@@ -2,11 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../features/chat/cubit/chat_cubit.dart';
+import '../features/chat/cubit/chat_state.dart';
 import '../widgets/chat_message_list.dart';
 import '../widgets/message_input.dart';
 import '../services/permission_service.dart';
 import '../services/app_lifecycle_service.dart';
-import '../main.dart';
+import '../services/bubble_service.dart';
+import '../core/di/service_locator.dart';
 
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
@@ -14,7 +16,7 @@ class ChatScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => ChatCubit(),
+      create: (_) => sl<ChatCubit>(),
       child: const _ChatView(),
     );
   }
@@ -99,26 +101,15 @@ class _ChatViewState extends State<_ChatView> {
           ],
         ),
         body: BlocBuilder<ChatCubit, ChatState>(
+          buildWhen: (prev, curr) => 
+            prev.status != curr.status || 
+            prev.messages.length != curr.messages.length,
           builder: (context, state) {
             if (state.isLoading && state.messages.isEmpty) {
-              return const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('Initializing...'),
-                  ],
-                ),
-              );
+              return const _LoadingView();
             }
             
-            return const Column(
-              children: [
-                Expanded(child: ChatMessageList()),
-                MessageInput(),
-              ],
-            );
+            return const _ChatBodyView();
           },
         ),
       ),
@@ -258,6 +249,39 @@ class _ChatViewState extends State<_ChatView> {
         Text('• Automatic state preservation'),
         Text('• Network connectivity handling'),
         Text('• Accessibility support'),
+      ],
+    );
+  }
+}
+
+// Optimized const widgets for better performance
+class _LoadingView extends StatelessWidget {
+  const _LoadingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text('Initializing...'),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatBodyView extends StatelessWidget {
+  const _ChatBodyView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [
+        Expanded(child: ChatMessageList()),
+        MessageInput(),
       ],
     );
   }
