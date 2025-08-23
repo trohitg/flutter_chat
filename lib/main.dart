@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'services/app_lifecycle_service.dart';
 import 'services/permission_service.dart';
 import 'services/connectivity_service.dart';
+import 'services/chat_service.dart';
 
 // Configuration class for easy backend URL management
 class AppConfig {
@@ -19,7 +18,7 @@ class AppConfig {
       // For Android emulator, use 10.0.2.2 to reach host machine
       // For physical device, replace with your machine's IP address
       // Example: 'http://192.168.1.100:8000'
-      return 'http://10.20.178.142:8000';
+      return 'http://192.168.29.64:8000';
     } else if (defaultTargetPlatform == TargetPlatform.iOS) {
       // For iOS simulator, localhost should work
       // For physical device, replace with your machine's IP address
@@ -310,6 +309,9 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _loadAppState() async {
+    // Load session
+    await ChatService.instance.loadSession();
+    
     // Load chat history
     final savedHistory = await AppLifecycleService.instance.loadChatHistory();
     if (savedHistory.isNotEmpty) {
@@ -322,27 +324,13 @@ class _ChatScreenState extends State<ChatScreen>
         _messages.add(ChatMessage(
           text: msg['content'] ?? '',
           isUser: msg['role'] == 'user',
-          timestamp: DateTime.now(), // Use current time as fallback
+          timestamp: DateTime.now(),
         ));
       }
-
-      // Check if last message was from user but no assistant response
-      // This indicates an interrupted conversation
-      if (_conversationHistory.isNotEmpty &&
-          _conversationHistory.last['role'] == 'user') {
-        if (kDebugMode) {
-          print(
-              'Detected interrupted conversation - user message without AI response');
-        }
-        // The user's message is already loaded, no need to resend
-        // The UI will show the incomplete conversation state
-      }
     } else {
-      // Initialize with welcome message if no history
       _initializeDefaultState();
     }
 
-    // Ensure text controller is cleared on app resume
     _textController.clear();
   }
 
@@ -570,55 +558,8 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<String> _sendMessageToBackend() async {
-    final String baseUrl = AppConfig.getBackendUrl();
-
-    try {
-      final requestBody = {
-        'messages': _conversationHistory,
-        'max_tokens': 1000,
-        'temperature': 0.7,
-      };
-
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/chat'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: json.encode(requestBody),
-          )
-          .timeout(const Duration(seconds: 30));
-
-      if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        return responseData['response'] ?? 'Sorry, I didn\'t understand that.';
-      } else {
-        final errorText =
-            response.body.isNotEmpty ? response.body : 'Unknown error';
-        throw Exception(
-            'Server returned status code: ${response.statusCode}. Error: $errorText');
-      }
-    } catch (e) {
-      // Enhanced error handling with debugging information
-      if (kDebugMode) {
-        print('Error connecting to backend at $baseUrl: $e');
-      }
-
-      if (e.toString().contains('XMLHttpRequest') ||
-          e.toString().contains('CORS')) {
-        throw Exception(
-            'CORS error: Please enable CORS on your backend server.');
-      } else if (e.toString().contains('Connection refused') ||
-          e.toString().contains('Network is unreachable')) {
-        throw Exception(
-            'Cannot connect to server at $baseUrl. Make sure the backend is running.');
-      } else if (e.toString().contains('SocketException')) {
-        throw Exception(
-            'Network error: Check your internet connection and backend URL.');
-      }
-      throw Exception('Failed to connect to server: $e');
-    }
+    final userMessage = _conversationHistory.last['content'] as String;
+    return await ChatService.instance.sendMessage(userMessage);
   }
 
   Future<void> _typeMessage(String message) async {
@@ -758,7 +699,8 @@ class _ChatScreenState extends State<ChatScreen>
         _conversationHistory.clear();
       });
 
-      // Clear saved history
+      // Clear session and saved history
+      await ChatService.instance.clearSession();
       await AppLifecycleService.instance.clearAppData();
 
       // Add welcome message back
