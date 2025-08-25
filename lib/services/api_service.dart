@@ -7,7 +7,7 @@ class ApiService {
   static ApiService? _instance;
   late final Dio _dio;
   late final ChatApi _chatApi;
-  
+
   static ApiService get instance {
     _instance ??= ApiService._();
     return _instance!;
@@ -42,9 +42,10 @@ class ApiService {
             message: 'Too many requests. Please slow down.',
           );
         } else if (error.type == DioExceptionType.connectionTimeout ||
-                   error.type == DioExceptionType.connectionError) {
+            error.type == DioExceptionType.connectionError) {
           error = error.copyWith(
-            message: 'Cannot connect to server. Please check if backend is running.',
+            message:
+                'Cannot connect to server. Please check if backend is running.',
           );
         }
         handler.next(error);
@@ -62,7 +63,7 @@ class ApiService {
       return 'http://localhost:8000';
     } else if (defaultTargetPlatform == TargetPlatform.android) {
       // For real device, use actual IP. For emulator, use 10.0.2.2
-      return 'http://192.168.29.64:8000'; // Update with your IP
+      return 'http://10.20.178.142:8000'; // Update with your IP
     }
     return 'http://localhost:8000';
   }
